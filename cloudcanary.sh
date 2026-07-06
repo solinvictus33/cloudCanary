@@ -28,6 +28,9 @@ PROJECT_INCLUDE_FILTER="${PROJECT_INCLUDE_FILTER:-}"   # optional gcloud --filte
 PROJECT_EXCLUDE_REGEX="${PROJECT_EXCLUDE_REGEX:-}"     # optional grep -Ev pattern
 WATCH_SA_KEYS="${WATCH_SA_KEYS:-true}"
 WATCH_SA_ROLES="${WATCH_SA_ROLES:-true}"
+WATCH_IAM_MEMBERS="${WATCH_IAM_MEMBERS:-true}"         # project-level role grants to ANY principal
+WATCH_ENABLED_APIS="${WATCH_ENABLED_APIS:-true}"       # service/API enablement drift
+WATCH_PUBLIC_EXPOSURE="${WATCH_PUBLIC_EXPOSURE:-true}" # 0.0.0.0/0 firewall + public buckets
 DRY_RUN="${DRY_RUN:-false}"                            # true = log only, no Slack posts
 
 mkdir -p "${STATE_DIR}"
@@ -120,6 +123,45 @@ while IFS= read -r project; do
   diff_and_alert "${project}.service-accounts" \
     "Service account(s) in \`${project}\`" \
     "${SERVICE_ACCOUNTS}"
+
+  if [[ "${WATCH_IAM_MEMBERS}" == "true" ]]; then
+    # Full role->member map: catches a human or group gaining Editor/Owner,
+    # not just service-account drift.
+    diff_and_alert "${project}.iam-bindings" \
+      "IAM role binding(s) in \`${project}\` (any principal — check for primitive roles)" \
+      "$(gcloud_list gcloud projects get-iam-policy "${project}" \
+           --flatten='bindings[].members' \
+           --format='value(bindings.role,bindings.members)')"
+  fi
+
+  if [[ "${WATCH_ENABLED_APIS}" == "true" ]]; then
+    # New API enablement is an early persistence/recon signal.
+    diff_and_alert "${project}.enabled-apis" \
+      "Enabled API(s) in \`${project}\`" \
+      "$(gcloud_list gcloud services list --enabled --project "${project}" --format='value(config.name)')"
+  fi
+
+  if [[ "${WATCH_PUBLIC_EXPOSURE}" == "true" ]]; then
+    # Posture, not just drift: ingress open to the internet.
+    diff_and_alert "${project}.public-firewall" \
+      ":rotating_light: INTERNET-OPEN firewall rule(s) in \`${project}\` (0.0.0.0/0 ingress)" \
+      "$(gcloud_list gcloud compute firewall-rules list --project "${project}" \
+           --filter='direction=INGRESS AND disabled=false' \
+           --format='value(name,sourceRanges.list())' | grep '0\.0\.0\.0/0' || true)"
+
+    # Buckets granting allUsers / allAuthenticatedUsers = public data surface.
+    PUBLIC_BUCKETS=""
+    while IFS= read -r bucket; do
+      [[ -z "${bucket}" ]] && continue
+      if gcloud_list gcloud storage buckets get-iam-policy "${bucket}" --format=json \
+           | grep -qE '"allUsers"|"allAuthenticatedUsers"'; then
+        PUBLIC_BUCKETS+="${bucket}"$'\n'
+      fi
+    done <<< "$(gcloud_list gcloud storage buckets list --project "${project}" --format='value(storage_url)')"
+    diff_and_alert "${project}.public-buckets" \
+      ":rotating_light: PUBLIC bucket(s) in \`${project}\` (allUsers/allAuthenticatedUsers)" \
+      "${PUBLIC_BUCKETS}"
+  fi
 
   # ---------------------------------------------------------------- identity governance
   while IFS= read -r sa; do

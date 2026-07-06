@@ -1,5 +1,7 @@
 # CloudCanary 🐤
 
+**Identity drift detection for GCP — who made a key, who got a role, what changed. In your Slack within 30 minutes.**
+
 Lightweight, agentless change-detection canary for Google Cloud. CloudCanary
 sweeps your GCP org on a schedule, diffs the live resource inventory against
 last-known state, and posts every delta to Slack — so your security team sees
@@ -22,6 +24,10 @@ zero-cost, zero-agent tripwire alongside (or ahead of) heavier tooling.
 | Service accounts | New identities entering the estate |
 | **User-managed SA keys** | Long-lived credential creation — top GCP compromise vector |
 | **Per-SA IAM role bindings** | Privilege escalation / drift, per identity |
+| **All-principal IAM bindings** | A human or group quietly gaining Editor/Owner |
+| **Enabled APIs** | Service enablement as an early persistence/recon signal |
+| **Internet-open firewall rules** | 0.0.0.0/0 ingress — posture alert, not just drift |
+| **Public buckets** | `allUsers` / `allAuthenticatedUsers` grants — data exposure |
 
 The last two are the point: most "cloud canaries" watch compute. CloudCanary
 treats **identity as the primary attack surface**.
@@ -84,6 +90,19 @@ First run seeds state and stays quiet; drift alerts begin from run two.
 - **`set -euo pipefail`**, quoted expansions, and per-call error isolation
   so one flaky API doesn't silently skip a project.
 
+## Why not Security Command Center / a CNAPP?
+
+Use them — when you can. SCC Premium and Wiz-class platforms are the right
+answer at budget. CloudCanary exists for the stages and gaps they don't cover:
+
+- **Pre-budget:** this began as the detection layer at an org with no SIEM
+  or CNAPP spend. Free, agentless, running in 30 minutes.
+- **Independent failure modes:** a tripwire that doesn't share credentials,
+  pipelines, or vendors with your primary tooling still fires when that
+  tooling is misconfigured, unpaid, or compromised.
+- **Graduation path:** when the CNAPP arrives, the canary doesn't retire —
+  it becomes the thing that watches the watchers.
+
 ## Limitations (honest ones)
 
 - Polling, not event-driven: detection latency = schedule interval. For
@@ -93,6 +112,18 @@ First run seeds state and stays quiet; drift alerts begin from run two.
 - Name-level diffing: renames appear as delete+create.
 - State lives on the runner: pin the job to one agent or move state to a
   bucket.
+
+## Deploy it your way
+
+- **Jenkins** — `Jenkinsfile` included (30-minute cron, credential-bound webhook)
+- **GitHub Actions** — `.github/workflows/canary.yml`, keyless auth via Workload
+  Identity Federation (OIDC), state persisted via cache
+- **Terraform** — `terraform/` provisions the canary's own identity as a
+  secure-by-default blueprint: dedicated read-only service account, org-level
+  viewer roles only, optional WIF binding so **no key is ever exported**.
+  A detection tool should never depend on the credential type it exists to detect.
+
+CI runs shellcheck on every push (`.github/workflows/lint.yml`).
 
 ## License
 

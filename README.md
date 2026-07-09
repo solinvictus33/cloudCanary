@@ -12,6 +12,9 @@ Built from a tool I ran in production as a first security hire: before the
 org had a SIEM budget, this was the detection layer. It remains useful as a
 zero-cost, zero-agent tripwire alongside (or ahead of) heavier tooling.
 
+CloudCanary is the detection half of a pair: paved-org is the prevention half. 
+The org baseline that makes the worst of these events impossible to begin with.
+
 ## What it watches
 
 | Signal | Why it matters |
@@ -102,6 +105,15 @@ answer at budget. CloudCanary exists for the stages and gaps they don't cover:
   tooling is misconfigured, unpaid, or compromised.
 - **Graduation path:** when the CNAPP arrives, the canary doesn't retire —
   it becomes the thing that watches the watchers.
+- **The prevention half: paved-org**
+  The strongest alert is the one that never fires. paved-org
+  is this repo's sister project - a GCP organization baseline as code whose
+  first org policy, iam.disableServiceAccountKeyCreation, prevents the
+  exact event CloudCanary most wants to detect. 
+  Run both: prevention for the known, detection for the drift. 
+  Guardrails stop what you've predicted;
+  the canary catches what you haven't.
+
 
 ## Limitations (honest ones)
 

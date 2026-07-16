@@ -15,7 +15,8 @@
 #   - Service accounts
 #   - Service account keys (user-managed)   <- identity-governance signal
 #   - Per-service-account IAM role bindings <- privilege-drift signal
-#
+#     grants, and publicly-invocable model endpoints
+#     grants, and publicly-invocable model endpoints
 # Configuration is environment-driven. No secrets in this file. See
 # config.example.env and README.md.
 
@@ -31,6 +32,7 @@ WATCH_SA_ROLES="${WATCH_SA_ROLES:-true}"
 WATCH_IAM_MEMBERS="${WATCH_IAM_MEMBERS:-true}"         # project-level role grants to ANY principal
 WATCH_ENABLED_APIS="${WATCH_ENABLED_APIS:-true}"       # service/API enablement drift
 WATCH_PUBLIC_EXPOSURE="${WATCH_PUBLIC_EXPOSURE:-true}" # 0.0.0.0/0 firewall + public buckets
+WATCH_AI_WORKLOADS="${WATCH_AI_WORKLOADS:-true}"       # Vertex/Gemini enablement, aiplatform.* grants, exposed model endpoints
 DRY_RUN="${DRY_RUN:-false}"                            # true = log only, no Slack posts
 
 mkdir -p "${STATE_DIR}"
@@ -163,6 +165,47 @@ while IFS= read -r project; do
       "${PUBLIC_BUCKETS}"
   fi
 
+
+  if [[ "${WATCH_AI_WORKLOADS}" == "true" ]]; then
+    # AI workloads reuse the estate's existing failure modes: an AI API is
+    # the enablement precursor, an aiplatform.* grant is the agency/blast-
+    # radius question, and a public model endpoint is the public-bucket
+    # problem wearing a new hat. Maps to the MCP trust-boundary threat model
+    # in paved-org (LLM03 supply chain / LLM06 excessive agency).
+
+    # 1. AI/ML API enablement — "someone started building with AI here".
+    diff_and_alert "${project}.ai-apis" \
+      "AI/ML API enablement in \`${project}\` (Vertex / Gemini / Generative Language)" \
+      "$(gcloud_list gcloud services list --enabled --project "${project}" \
+           --format='value(config.name)' \
+         | grep -E 'aiplatform\.googleapis\.com|generativelanguage\.googleapis\.com|notebooks\.googleapis\.com' || true)"
+
+    # 2. aiplatform.* role grants to ANY principal — the agent-identity inventory.
+    diff_and_alert "${project}.ai-iam" \
+      "Vertex AI role binding(s) in \`${project}\` (aiplatform.* — agent-identity privilege)" \
+      "$(gcloud_list gcloud projects get-iam-policy "${project}" \
+           --flatten='bindings[].members' \
+           --format='value(bindings.role,bindings.members)' \
+         | grep 'roles/aiplatform' || true)"
+
+    # 3. Publicly-invocable model endpoints — model-serving analogue of a public bucket.
+    PUBLIC_AI_ENDPOINTS=""
+    while IFS= read -r region; do
+      [[ -z "${region}" ]] && continue
+      while IFS= read -r endpoint; do
+        [[ -z "${endpoint}" ]] && continue
+        if gcloud_list gcloud ai endpoints get-iam-policy "${endpoint}" \
+             --project "${project}" --region "${region}" --format=json \
+             | grep -qE '"allUsers"|"allAuthenticatedUsers"'; then
+          PUBLIC_AI_ENDPOINTS+="${region}/${endpoint}"$'\n'
+        fi
+      done <<< "$(gcloud_list gcloud ai endpoints list --project "${project}" \
+                   --region "${region}" --format='value(name)')"
+    done <<< "${AI_ENDPOINT_REGIONS:-us-central1 us-east1 us-east4 europe-west4}"
+    diff_and_alert "${project}.ai-public-endpoints" \
+      ":rotating_light: PUBLIC model endpoint(s) in \`${project}\` (allUsers/allAuthenticatedUsers on a Vertex endpoint)" \
+      "${PUBLIC_AI_ENDPOINTS}"
+  fi
   # ---------------------------------------------------------------- identity governance
   while IFS= read -r sa; do
     [[ -z "${sa}" ]] && continue

@@ -31,9 +31,17 @@ The org baseline that makes the worst of these events impossible to begin with.
 | **Enabled APIs** | Service enablement as an early persistence/recon signal |
 | **Internet-open firewall rules** | 0.0.0.0/0 ingress — posture alert, not just drift |
 | **Public buckets** | `allUsers` / `allAuthenticatedUsers` grants — data exposure |
+| **AI/ML API enablement** | Vertex / Gemini turned on — the AI-adoption precursor to every other AI risk |
+| **`aiplatform.*` role grants** | Agent-identity privilege (Excessive Agency, LLM06) — what the AI workloads can do |
+| **Public model endpoints** | `allUsers` on a Vertex endpoint — model serving exposed beyond the org |
 
 The last two are the point: most "cloud canaries" watch compute. CloudCanary
 treats **identity as the primary attack surface**.
+
+AI workloads are watched through that same identity lens: an AI API is an
+enablement event, an `aiplatform.*` grant is a privilege event, and a public
+endpoint is an exposure event. See the companion threat model in
+[paved-org](https://github.com/ChrisInvictus/paved-org/blob/main/docs/threat-models/mcp-trust-boundaries.md).
 
 ## How it works
 
@@ -53,7 +61,7 @@ no agents, no cloud-side footprint beyond read-only API calls.
 1. **Identity for the canary.** Create a dedicated service account with
    read-only roles — `roles/browser`, `roles/compute.viewer`,
    `roles/iam.securityReviewer`, `roles/storage.objectViewer` (bucket
-   listing). Prefer Workload Identity / attached SA on the runner over
+   listing), and `roles/aiplatform.viewer` (Vertex endpoint / IAM reads). Prefer Workload Identity / attached SA on the runner over
    exported key files. (A detection tool that requires a long-lived key
    would be flagging itself.)
 2. **Slack webhook.** Create an incoming webhook for your security channel

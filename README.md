@@ -1,6 +1,10 @@
 # CloudCanary 🐤
 
+![CI](https://github.com/ChrisInvictus/CloudCanary/actions/workflows/lint.yml/badge.svg) ![License](https://img.shields.io/github/license/ChrisInvictus/CloudCanary)
+
 **Identity drift detection for GCP — who made a key, who got a role, what changed. In your Slack within 30 minutes.**
+
+**At a glance:** identity drift, service-account key creation, privilege changes, public exposure, and AI/ML service enablement — detected agentless on a 30-minute cycle, alerted to Slack, at ~zero cost · least-privilege by construction (the canary itself runs keyless via WIF) · prevention half: [paved-org](https://github.com/ChrisInvictus/paved-org).
 
 Lightweight, agentless change-detection canary for Google Cloud. CloudCanary
 sweeps your GCP org on a schedule, diffs the live resource inventory against
